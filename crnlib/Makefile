@@ -1,5 +1,19 @@
-COMPILE_OPTIONS = -O3 -fomit-frame-pointer -ffast-math -fno-math-errno -g -fno-strict-aliasing -Wall -Wno-unused-value -Wno-unused -march=core2
-LINKER_OPTIONS = -lpthread -g
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+
+COMPILE_OPTIONS = -O3 -fomit-frame-pointer -ffast-math -fno-math-errno -g -fno-strict-aliasing -Wall -Wno-unused-value -Wno-unused
+
+ifneq ($(UNAME_S),Darwin)
+  ifeq ($(UNAME_M),x86_64)
+    COMPILE_OPTIONS += -march=core2
+  endif
+endif
+
+ifeq ($(UNAME_S),Darwin)
+  LINKER_OPTIONS = -lpthread -g
+else
+  LINKER_OPTIONS = -lpthread -g
+endif
 
 OBJECTS = \
   crn_arealist.o \

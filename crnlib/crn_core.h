@@ -60,10 +60,15 @@
    #define CRNLIB_MEMORY_IMPORT_BARRIER
    #define CRNLIB_MEMORY_EXPORT_BARRIER
 #elif defined(__GNUC__) && !defined(CRNLIB_ANSI_CPLUSPLUS)
-   // GCC x86 or x64, pthreads for threading and GCC built-ins for atomic ops.
+   // GCC/Clang, pthreads for threading and GCC built-ins for atomic ops.
    #define CRNLIB_PLATFORM_PC 1
 
-   #if defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__)
+   #if defined(__aarch64__) || defined(__arm64__)
+      // ARM64 (e.g. Apple Silicon)
+      #define CRNLIB_PLATFORM_PC_X64 1
+      #define CRNLIB_64BIT_POINTERS 1
+      #define CRNLIB_CPU_HAS_64BIT_REGISTERS 1
+   #elif defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__)
       #define CRNLIB_PLATFORM_PC_X64 1
       #define CRNLIB_64BIT_POINTERS 1
       #define CRNLIB_CPU_HAS_64BIT_REGISTERS 1
@@ -73,16 +78,28 @@
       #define CRNLIB_CPU_HAS_64BIT_REGISTERS 0
    #endif
 
-   #define CRNLIB_USE_UNALIGNED_INT_LOADS 1
+   #if defined(__aarch64__) || defined(__arm64__)
+      #define CRNLIB_USE_UNALIGNED_INT_LOADS 0
+   #else
+      #define CRNLIB_USE_UNALIGNED_INT_LOADS 1
+   #endif
 
-   #define CRNLIB_LITTLE_ENDIAN_CPU 1
+   #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      #define CRNLIB_BIG_ENDIAN_CPU 1
+   #else
+      #define CRNLIB_LITTLE_ENDIAN_CPU 1
+   #endif
 
    #define CRNLIB_USE_PTHREADS_API 1
    #define CRNLIB_USE_GCC_ATOMIC_BUILTINS 1
 
    #define CRNLIB_RESTRICT
 
-   #define CRNLIB_FORCE_INLINE inline __attribute__((__always_inline__,__gnu_inline__))
+   #if defined(__cplusplus)
+      #define CRNLIB_FORCE_INLINE inline __attribute__((__always_inline__))
+   #else
+      #define CRNLIB_FORCE_INLINE inline __attribute__((__always_inline__,__gnu_inline__))
+   #endif
 
    #define CRNLIB_INT64_FORMAT_SPECIFIER "%lli"
    #define CRNLIB_UINT64_FORMAT_SPECIFIER "%llu"

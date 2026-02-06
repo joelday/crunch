@@ -19,9 +19,15 @@ void crnlib_fail(const char* pExp, const char* pFile, unsigned line);
 const bool c_crnlib_big_endian_platform = !c_crnlib_little_endian_platform;
 
 #ifdef __GNUC__
-   #define crn_fopen(pDstFile, f, m) *(pDstFile) = fopen64(f, m)
-   #define crn_fseek fseeko64
-   #define crn_ftell ftello64
+   #if defined(__APPLE__)
+      #define crn_fopen(pDstFile, f, m) *(pDstFile) = fopen(f, m)
+      #define crn_fseek fseeko
+      #define crn_ftell ftello
+   #else
+      #define crn_fopen(pDstFile, f, m) *(pDstFile) = fopen64(f, m)
+      #define crn_fseek fseeko64
+      #define crn_ftell ftello64
+   #endif
 #elif defined( _MSC_VER )
    #define crn_fopen(pDstFile, f, m) fopen_s(pDstFile, f, m)
    #define crn_fseek _fseeki64
@@ -36,7 +42,11 @@ const bool c_crnlib_big_endian_platform = !c_crnlib_little_endian_platform;
    #define CRNLIB_BREAKPOINT DebugBreak();
    #define CRNLIB_BUILTIN_EXPECT(c, v) c
 #elif defined(__GNUC__)
-   #define CRNLIB_BREAKPOINT asm("int $3");
+   #if defined(__aarch64__) || defined(__arm64__)
+      #define CRNLIB_BREAKPOINT __builtin_debugtrap();
+   #else
+      #define CRNLIB_BREAKPOINT asm("int $3");
+   #endif
    #define CRNLIB_BUILTIN_EXPECT(c, v) __builtin_expect(c, v)
 #else
    #define CRNLIB_BREAKPOINT

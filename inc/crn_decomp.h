@@ -316,6 +316,9 @@ namespace crnd
 #include <stdio.h>
 #ifdef WIN32
 #include <memory.h>
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#define malloc_usable_size malloc_size
 #else
 #include <malloc.h>
 #endif
@@ -373,14 +376,10 @@ namespace crnd
 
    const uint32 cIntBits = 32U;
 
-#ifdef _WIN64
+#if defined(_WIN64) || defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__) || defined(__LP64__)
    typedef uint64 ptr_bits;
 #else
-   #ifdef __x86_64__
-      typedef uint64 ptr_bits;
-   #else
-      typedef uint32 ptr_bits;
-   #endif
+   typedef uint32 ptr_bits;
 #endif
 
    template<typename T> struct int_traits { enum { cMin = crnd::cINT32_MIN, cMax = crnd::cINT32_MAX, cSigned = true }; };
@@ -2529,14 +2528,14 @@ namespace crnd
          return NULL;
       }
 
-      CRND_ASSERT(((uint32)p_new & (CRND_MIN_ALLOC_ALIGNMENT - 1)) == 0);
+      CRND_ASSERT((reinterpret_cast<ptr_bits>(p_new) & (CRND_MIN_ALLOC_ALIGNMENT - 1)) == 0);
 
       return p_new;
    }
 
    void* crnd_realloc(void* p, size_t size, size_t* pActual_size, bool movable)
    {
-      if ((uint32)reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
+      if (reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
       {
          crnd_mem_error("crnd_realloc: bad ptr");
          return NULL;
@@ -2554,7 +2553,7 @@ namespace crnd
       if (pActual_size)
          *pActual_size = actual_size;
 
-      CRND_ASSERT(((uint32)p_new & (CRND_MIN_ALLOC_ALIGNMENT - 1)) == 0);
+      CRND_ASSERT((reinterpret_cast<ptr_bits>(p_new) & (CRND_MIN_ALLOC_ALIGNMENT - 1)) == 0);
 
       return p_new;
    }
@@ -2564,7 +2563,7 @@ namespace crnd
       if (!p)
          return;
 
-      if ((uint32)reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
+      if (reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
       {
          crnd_mem_error("crnd_free: bad ptr");
          return;
@@ -2578,7 +2577,7 @@ namespace crnd
       if (!p)
          return 0;
 
-      if ((uint32)reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
+      if (reinterpret_cast<ptr_bits>(p) & (CRND_MIN_ALLOC_ALIGNMENT - 1))
       {
          crnd_mem_error("crnd_msize: bad ptr");
          return 0;

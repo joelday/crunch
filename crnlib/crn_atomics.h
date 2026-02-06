@@ -11,10 +11,21 @@
 #endif
 
 #if defined(__GNUC__) && CRNLIB_PLATFORM_PC
+   #if defined(__aarch64__) || defined(__arm64__)
+extern __inline__ __attribute__((__always_inline__)) void crnlib_yield_processor()
+{
+   __asm__ __volatile__("yield");
+}
+   #elif defined(__i386__) || defined(__x86_64__)
 extern __inline__ __attribute__((__always_inline__,__gnu_inline__)) void crnlib_yield_processor()
 {
    __asm__ __volatile__("pause");
 }
+   #else
+extern __inline__ __attribute__((__always_inline__,__gnu_inline__)) void crnlib_yield_processor()
+{
+}
+   #endif
 #else
 CRNLIB_FORCE_INLINE void crnlib_yield_processor()
 {

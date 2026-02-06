@@ -11,7 +11,11 @@
 #endif
 
 #include <pthread.h>
+#if defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#else
 #include <semaphore.h>
+#endif
 #include <unistd.h>
 
 namespace crnlib
@@ -74,7 +78,11 @@ namespace crnlib
       bool wait(uint32 milliseconds = cUINT32_MAX);
 
    private:
+#if defined(__APPLE__)
+      dispatch_semaphore_t m_sem;
+#else
       sem_t m_sem;
+#endif
    };
 
    class spinlock
@@ -87,7 +95,11 @@ namespace crnlib
       void unlock();
 
    private:
+#if defined(__APPLE__)
+      pthread_mutex_t m_spinlock;
+#else
       pthread_spinlock_t m_spinlock;
+#endif
    };
 
    class scoped_spinlock
