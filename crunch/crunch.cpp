@@ -566,7 +566,7 @@ private:
                if (file_utils::is_path_separator(out_dir.back()))
                   out_filename.format("%s%s.%s", out_dir.get_ptr(), in_fname.get_ptr(), texture_file_types::get_extension(out_file_type));
                else
-                  out_filename.format("%s\\%s.%s", out_dir.get_ptr(), in_fname.get_ptr(), texture_file_types::get_extension(out_file_type));
+                  out_filename.format("%s%c%s.%s", out_dir.get_ptr(), CRNLIB_PATH_SEPERATOR_CHAR, in_fname.get_ptr(), texture_file_types::get_extension(out_file_type));
             }
             else
             {
