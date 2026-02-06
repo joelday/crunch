@@ -302,6 +302,17 @@ namespace crnd
 
    const unsigned int cCRNHeaderMinSize = 62U;
 
+   // Extended header storage that has room for up to cCRNMaxLevels level offsets.
+   // Used as a local storage buffer when Cryptic Studios CRN format is detected
+   // and needs to be converted to standard format with adjusted offsets.
+   // We use raw storage to avoid issues with union and non-trivial constructors.
+   struct crn_header_storage
+   {
+      uint8 storage[sizeof(crn_header) + sizeof(crn_packed_uint<4>) * (cCRNMaxLevels - 1)];
+      crn_header& header() { return *reinterpret_cast<crn_header*>(storage); }
+      const crn_header& header() const { return *reinterpret_cast<const crn_header*>(storage); }
+   };
+
 #pragma pack(pop)
 
 } // namespace crnd
@@ -2676,11 +2687,71 @@ namespace crnd
       return (crnd_get_crn_format_bits_per_texel(fmt) << 4) >> 3;
    }
 
-   // TODO: tmp_header isn't used/This function is a helper to support old headers.
-   const crn_header* crnd_get_header(crn_header& tmp_header, const void* pData, uint32 data_size)
+   // Detects if a CRN file uses Cryptic Studios' variant format where palette and level
+   // offsets are relative to the header end rather than absolute file offsets.
+   // Returns true if Cryptic format is detected.
+   inline bool crnd_is_cryptic_format(const crn_header& header, uint32 data_size)
    {
-      tmp_header;
+      // Cryptic format signature: color_endpoints offset is 0 but size is non-zero
+      // (in standard CRN, offset 0 would mean the palette starts at the file beginning,
+      // which is impossible since that's where the header is)
+      if ((header.m_color_endpoints.m_size > 0) && (header.m_color_endpoints.m_ofs == 0))
+         return true;
 
+      // Additional check: in Cryptic format, data_size is less than file size
+      // (it's the payload size, not total file size)
+      if ((header.m_data_size > 0) && (header.m_data_size < data_size) && 
+          (header.m_data_size + header.m_header_size <= data_size))
+         return true;
+
+      return false;
+   }
+
+   // Helper to convert Cryptic CRN header offsets to absolute file offsets
+   // Copies the header to tmp_header and adjusts all offset fields
+   const crn_header* crnd_convert_cryptic_header(crn_header_storage& tmp_storage, const void* pData, uint32 data_size)
+   {
+      crn_header& tmp_header = tmp_storage.header();
+      const crn_header& file_header = *static_cast<const crn_header*>(pData);
+      const uint32 header_size = file_header.m_header_size;
+      const uint32 num_levels = file_header.m_levels;
+
+      // Copy the entire header including variable-length level_ofs array
+      // Header base size is 70 bytes (up to first level_ofs), plus 4 bytes per additional level
+      const uint32 full_header_size = 70 + (num_levels > 1 ? (num_levels - 1) * 4 : 0);
+      if (header_size < full_header_size || data_size < header_size)
+         return NULL;
+
+      memcpy(&tmp_header, pData, math::minimum<uint32>(header_size, sizeof(crn_header) + sizeof(crn_packed_uint<4>) * (cCRNMaxLevels - 1)));
+
+      // Adjust palette offsets (add header_size to convert relative to absolute)
+      if (tmp_header.m_color_endpoints.m_size > 0)
+         tmp_header.m_color_endpoints.m_ofs = (uint32)tmp_header.m_color_endpoints.m_ofs + header_size;
+      if (tmp_header.m_color_selectors.m_size > 0)
+         tmp_header.m_color_selectors.m_ofs = (uint32)tmp_header.m_color_selectors.m_ofs + header_size;
+      if (tmp_header.m_alpha_endpoints.m_size > 0)
+         tmp_header.m_alpha_endpoints.m_ofs = (uint32)tmp_header.m_alpha_endpoints.m_ofs + header_size;
+      if (tmp_header.m_alpha_selectors.m_size > 0)
+         tmp_header.m_alpha_selectors.m_ofs = (uint32)tmp_header.m_alpha_selectors.m_ofs + header_size;
+
+      // Adjust tables offset
+      if (tmp_header.m_tables_size > 0)
+         tmp_header.m_tables_ofs = (uint32)tmp_header.m_tables_ofs + header_size;
+
+      // Adjust level offsets
+      for (uint32 i = 0; i < num_levels; i++)
+         tmp_header.m_level_ofs[i] = (uint32)tmp_header.m_level_ofs[i] + header_size;
+
+      // Fix data_size to be total file size (standard CRN expects this)
+      tmp_header.m_data_size = data_size;
+
+      return &tmp_header;
+   }
+
+   // TODO: tmp_header isn't used/This function is a helper to support old headers.
+   // Updated to detect and convert Cryptic Studios CRN format
+   const crn_header* crnd_get_header(crn_header_storage& tmp_storage, const void* pData, uint32 data_size)
+   {
       if ((!pData) || (data_size < sizeof(crn_header)))
          return NULL;
 
@@ -2688,7 +2759,18 @@ namespace crnd
       if (file_header.m_sig != crn_header::cCRNSigValue)
          return NULL;
 
-      if ((file_header.m_header_size < sizeof(crn_header)) || (data_size < file_header.m_data_size))
+      if (file_header.m_header_size < sizeof(crn_header))
+         return NULL;
+
+      // Check for Cryptic Studios CRN format (offsets relative to header end)
+      if (crnd_is_cryptic_format(file_header, data_size))
+      {
+         // Convert Cryptic format to standard format in tmp_storage
+         return crnd_convert_cryptic_header(tmp_storage, pData, data_size);
+      }
+
+      // Standard CRN format validation
+      if (data_size < file_header.m_data_size)
          return NULL;
 
       return &file_header;
@@ -2707,8 +2789,8 @@ namespace crnd
       if ((!pData) || (data_size < cCRNHeaderMinSize))
          return false;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return false;
 
@@ -2768,8 +2850,8 @@ namespace crnd
       if (pInfo->m_struct_size != sizeof(crn_texture_info))
          return false;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return false;
 
@@ -2793,8 +2875,8 @@ namespace crnd
       if (pLevel_info->m_struct_size != sizeof(crn_level_info))
          return false;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return false;
 
@@ -2823,8 +2905,8 @@ namespace crnd
       if ((!pData) || (data_size < cCRNHeaderMinSize))
          return NULL;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return NULL;
 
@@ -2850,8 +2932,8 @@ namespace crnd
       if ((!pData) || (data_size < cCRNHeaderMinSize))
          return false;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return false;
 
@@ -2871,8 +2953,8 @@ namespace crnd
       if ((!pData) || (data_size < cCRNHeaderMinSize))
          return false;
 
-      crn_header tmp_header;
-      const crn_header* pHeader = crnd_get_header(tmp_header, pData, data_size);
+      crn_header_storage tmp_storage;
+      const crn_header* pHeader = crnd_get_header(tmp_storage, pData, data_size);
       if (!pHeader)
          return false;
 
@@ -3663,7 +3745,7 @@ namespace crnd
 
       bool init(const void* pData, uint32 data_size)
       {
-         m_pHeader = crnd_get_header(m_tmp_header, pData, data_size);
+         m_pHeader = crnd_get_header(m_tmp_storage, pData, data_size);
          if (!m_pHeader)
             return false;
 
@@ -3770,7 +3852,9 @@ namespace crnd
 
       const uint8*       m_pData;
       uint32             m_data_size;
-      crn_header         m_tmp_header;
+      // Extended header storage to hold up to cCRNMaxLevels level offsets
+      // The base crn_header only has room for 1 level_ofs entry
+      crn_header_storage m_tmp_storage;
       const crn_header*  m_pHeader;
 
       symbol_codec       m_codec;
